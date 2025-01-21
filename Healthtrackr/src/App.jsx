@@ -71,7 +71,7 @@ function App() {
 
     try {
       const { data, error, status } = await supabase
-        .from("arztbesuch")
+        .from("Artzbesuch")
         .insert([
           {
             benutzer_id: user.id, // Hier wird benutzer_id verwendet
@@ -84,6 +84,7 @@ function App() {
       // Überprüfe, ob ein Fehler aufgetreten ist
       if (error) {
         console.error("Fehler beim Hinzufügen des Arztbesuchs:", error);
+        console.log("Error status:", status);  // Ausgabe des Status-Codes
         alert(`Fehler: ${error.message}`);
         return;
       }
