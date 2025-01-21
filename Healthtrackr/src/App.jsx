@@ -2,67 +2,83 @@ import React, { useState, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { Auth } from "@supabase/auth-ui-react";
 import { ThemeSupa } from "@supabase/auth-ui-shared";
+import './style.css';
 
-// Supabase-Client erstellen
 const supabase = createClient(
-  "https://yqngvcycseboxalkhoif.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlxbmd2Y3ljc2Vib3hhbGtob2lmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc0NTMzMzcsImV4cCI6MjA1MzAyOTMzN30.sACT8RU4d8wLLWyYD0ih7PUrWMI9Pn9OcxmYJ6dGeVc"
+  import.meta.env.VITE_SUPABASE_URL,  // URL aus der .env Datei
+  import.meta.env.VITE_SUPABASE_API_KEY  // API-Schlüssel aus der .env Datei
 );
 
 function App() {
   const [user, setUser] = useState(null);
   const [arztbesuch, setArztbesuch] = useState([]);
+  const [benutzer, setBenutzer] = useState(null);
   const [newArztbesuch, setNewArztbesuch] = useState({
     datum: "",
     arzt_name: "",
     grund: "",
   });
+  const [editArztbesuch, setEditArztbesuch] = useState(null); 
 
+ 
   useEffect(() => {
     const fetchSession = async () => {
       const { data: session, error } = await supabase.auth.getSession();
       if (error) {
         console.error("Error fetching session:", error);
-      } else if (session) {
-        setUser(session.user); // Benutzer setzen, wenn Session vorhanden
+      } else {
+        setUser(session?.user || null); 
       }
     };
 
     fetchSession();
 
-    // Authentifizierungslistener
-    const authListener = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (session) {
-          setUser(session.user);
-        } else {
-          setUser(null);
-        }
-      }
-    );
+    const authListener = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user || null); 
+    });
 
+    
     return () => {
       authListener.data?.unsubscribe?.();
     };
   }, []);
 
-  // Funktion zum Abrufen der Arztbesuche des Benutzers
+  
+  const fetchBenutzerData = async () => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from("Benutzer")
+      .select("id, name, email")
+      .eq("id", user.id)
+      .single();
+
+    if (error) {
+      console.error("Error fetching user data:", error);
+      return;
+    }
+
+    setBenutzer(data); 
+  };
+
+  // Holt alle Arztbesuche des Benutzers
   const fetchArztbesuch = async () => {
     if (!user) return;
 
     const { data, error } = await supabase
-      .from("arztbesuch")
-      .select()
-      .eq("benutzer_id", user.id); // Benutzen von benutzer_id für die Abfrage
+      .from("Arztbesuch")
+      .select("*")
+      .eq("benutzer_id", user.id);
 
     if (error) {
       console.error("Error fetching arztbesuch:", error);
-    } else {
-      setArztbesuch(data);
+      return;
     }
+
+    setArztbesuch(data); 
   };
 
-  // Funktion zum Hinzufügen eines neuen Arztbesuchs
+  // Wird aufgerufen, wenn ein neuer Arztbesuch hinzugefügt wird
   const addArztbesuch = async () => {
     if (!newArztbesuch.datum || !newArztbesuch.arzt_name || !newArztbesuch.grund) {
       alert("Bitte füllen Sie alle Felder aus!");
@@ -70,30 +86,29 @@ function App() {
     }
 
     try {
-      const { data, error, status } = await supabase
-        .from("Artzbesuch")
+      // Arztbesuch in Supabase-Datenbank einfügen
+      const { data, error } = await supabase
+        .from("Arztbesuch")
         .insert([
           {
-            benutzer_id: user.id, // Hier wird benutzer_id verwendet
+            benutzer_id: user.id,
             datum: newArztbesuch.datum,
             arzt_name: newArztbesuch.arzt_name,
             grund: newArztbesuch.grund,
           },
-        ]);
+        ])
+        .single(); // .single() gibt uns nur den neu hinzugefügten Eintrag zurück
 
-      // Überprüfe, ob ein Fehler aufgetreten ist
       if (error) {
         console.error("Fehler beim Hinzufügen des Arztbesuchs:", error);
-        console.log("Error status:", status);  // Ausgabe des Status-Codes
         alert(`Fehler: ${error.message}`);
         return;
       }
 
-      // Ausgabe der Antwort von Supabase
-      console.log("Arztbesuch erfolgreich hinzugefügt:", data);
+      // Erfolgreich hinzugefügt, Zustand aktualisieren
+      setArztbesuch((prevState) => [...prevState, data]);
 
-      // Wenn keine Fehler vorhanden sind, Arztbesuch in den Zustand hinzufügen
-      setArztbesuch((prevState) => [...prevState, ...data]);
+      
       setNewArztbesuch({ datum: "", arzt_name: "", grund: "" });
     } catch (err) {
       console.error("Fehler beim Hinzufügen des Arztbesuchs:", err);
@@ -101,19 +116,63 @@ function App() {
     }
   };
 
-  // Funktion zum Löschen eines Arztbesuchs
+  // Bearbeitet einen bestehenden Arztbesuch
+  const editArztbesuchHandler = async () => {
+    if (!editArztbesuch.datum || !editArztbesuch.arzt_name || !editArztbesuch.grund) {
+      alert("Bitte füllen Sie alle Felder aus!");
+      return;
+    }
+
+    try {
+      // Arztbesuch in der Supabase-Datenbank aktualisieren
+      const { data, error } = await supabase
+        .from("Arztbesuch")
+        .update({
+          datum: editArztbesuch.datum,
+          arzt_name: editArztbesuch.arzt_name,
+          grund: editArztbesuch.grund,
+        })
+        .eq("id", editArztbesuch.id) 
+        .single();
+
+      if (error) {
+        console.error("Fehler beim Bearbeiten des Arztbesuchs:", error);
+        alert(`Fehler: ${error.message}`);
+        return;
+      }
+
+      // Erfolgreich aktualisiert, Zustand aktualisieren
+      setArztbesuch((prevState) => {
+        return prevState.map((besuch) =>
+          besuch.id === editArztbesuch.id ? data : besuch
+        );
+      });
+
+      // Formular zurücksetzen
+      setEditArztbesuch(null); 
+    } catch (err) {
+      console.error("Fehler beim Bearbeiten des Arztbesuchs:", err);
+      alert(`Fehler: ${err.message}`);
+    }
+  };
+
+  // Löscht einen Arztbesuch
   const deleteArztbesuch = async (arztbesuchId) => {
+    if (!user) return;
+
     const { error } = await supabase
-      .from("arztbesuch")
+      .from("Arztbesuch")
       .delete()
       .eq("id", arztbesuchId)
-      .eq("benutzer_id", user.id); // Sicherstellen, dass nur der Benutzer seine eigenen Einträge löschen kann
+      .eq("benutzer_id", user.id); // Nur eigene Einträge löschen
 
     if (error) {
       console.error("Fehler beim Löschen des Arztbesuchs:", error);
-    } else {
-      setArztbesuch(arztbesuch.filter((besuch) => besuch.id !== arztbesuchId));
+      return;
     }
+
+    // Arztbesuch aus dem Zustand entfernen
+    setArztbesuch((prevState) => prevState.filter((besuch) => besuch.id !== arztbesuchId));
   };
 
   // Logout-Funktion
@@ -121,6 +180,14 @@ function App() {
     await supabase.auth.signOut();
     setUser(null);
   };
+
+  // useEffect für das Abrufen der Benutzer- und Arztbesuchsdaten bei Benutzerauthentifizierung
+  useEffect(() => {
+    if (user) {
+      fetchBenutzerData(); // Holt Benutzerdaten bei erfolgreicher Anmeldung
+      fetchArztbesuch(); // Holt Arztbesuche bei erfolgreicher Anmeldung
+    }
+  }, [user]); 
 
   return (
     <div>
@@ -137,18 +204,29 @@ function App() {
         </div>
       ) : (
         <div>
-          <h2>Welcome, {user.email}</h2>
+          <h2>Welcome, {benutzer ? benutzer.name : 'loading...'}</h2>
+          <p>Email: {benutzer ? benutzer.email : 'loading...'}</p>
           <button onClick={handleSignOut}>Sign Out</button>
 
           <h3>Your Arztbesuche</h3>
-          <ul>
-            {arztbesuch.map((besuch) => (
-              <li key={besuch.id}>
-                {besuch.datum} - {besuch.arzt_name} - {besuch.grund}
-                <button onClick={() => deleteArztbesuch(besuch.id)}>Delete</button>
-              </li>
-            ))}
-          </ul>
+          {arztbesuch && arztbesuch.length > 0 ? (
+            <ul>
+              {arztbesuch.map((besuch) => {
+                if (besuch) {
+                  return (
+                    <li key={besuch.id}>
+                      {besuch.datum} - {besuch.arzt_name} - {besuch.grund}
+                      <button onClick={() => deleteArztbesuch(besuch.id)}>Delete</button>
+                      <button onClick={() => setEditArztbesuch(besuch)}>Edit</button>
+                    </li>
+                  );
+                }
+                return null;
+              })}
+            </ul>
+          ) : (
+            <p>Noch keine Arztbesuche.</p>
+          )}
 
           <h3>Add New Arztbesuch</h3>
           <form
@@ -176,6 +254,37 @@ function App() {
             />
             <button type="submit">Add Arztbesuch</button>
           </form>
+
+          {editArztbesuch && (
+            <div>
+              <h3>Edit Arztbesuch</h3>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  editArztbesuchHandler();
+                }}
+              >
+                <input
+                  type="date"
+                  value={editArztbesuch.datum}
+                  onChange={(e) => setEditArztbesuch({ ...editArztbesuch, datum: e.target.value })}
+                />
+                <input
+                  type="text"
+                  value={editArztbesuch.arzt_name}
+                  onChange={(e) => setEditArztbesuch({ ...editArztbesuch, arzt_name: e.target.value })}
+                  placeholder="Doctor's Name"
+                />
+                <input
+                  type="text"
+                  value={editArztbesuch.grund}
+                  onChange={(e) => setEditArztbesuch({ ...editArztbesuch, grund: e.target.value })}
+                  placeholder="Reason"
+                />
+                <button type="submit">Save Changes</button>
+              </form>
+            </div>
+          )}
         </div>
       )}
     </div>
